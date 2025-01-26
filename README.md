@@ -1,3 +1,16 @@
+## Project overview
+
+We'll make a stablecoin that has those specific traits:
+
+- (Relative Stability): Anchored or pegged to the US Dollar
+    - Chainlink Price feed.
+    - Set a function to exchange ETH/BTC -> USD
+- (Stability mechanism / Minting): Algorithmic (decentralized)
+    - People can only mint the stablecoin with enough collateral (coded)
+- Collateral: exogenous (crypto)
+    - wETH and wBTC (erc 20 versions of ETH & BTC)
+
+
 ## Foundry
 
 **Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
