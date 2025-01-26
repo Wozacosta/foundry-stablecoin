@@ -10,6 +10,9 @@ We'll make a stablecoin that has those specific traits:
 - Collateral: exogenous (crypto)
     - wETH and wBTC (erc 20 versions of ETH & BTC)
 
+## Dependencies
+
+Installed open-zeppelin contracts via: `forge install openzeppelin/openzeppelin-contracts@v4.8.3 --no-commit`
 
 ## Foundry
 
