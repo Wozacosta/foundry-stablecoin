@@ -47,6 +47,37 @@ pragma solidity ^0.8.19;
  * @notice This contract is based on the MakerDAO DSS system // https://github.com/makerdao/dss
  */
 contract DSCEngine {
+    /* --------------------- 
+    ------- ERRORS ---------
+    /* --------------------- */
+    error DSCEngine__NeedsMoreThanZero();
+    /* --------------------- 
+    ------- STATE VARIABLES
+    /* --------------------- */
+    mapping(address token => address priceFeed) private s_priceFeeds;
+
+    /* --------------------- 
+    ------- MODIFIERS ------
+    /* --------------------- */
+    modifier moreThanZero(uint256 amount) {
+        if (amount == 0) {
+            revert DSCEngine__NeedsMoreThanZero();
+        }
+        _;
+    }
+    modifier isAllowedToken(address tokenAddress) {
+        require(tokenAddress != address(0), "DSCEngine__NotZeroAddress");
+        _;
+    }
+
+    /* --------------------- 
+    ------- FUNCTIONS ------
+    /* --------------------- */
+    constructor() {}
+
+    /* --------------------- 
+    ------- EXTERNAL FUNCTIONS
+    /* --------------------- */
     function depositCollateralAndMintDSC() external {
         // deposit collateral
         // mint DSC
@@ -59,7 +90,7 @@ contract DSCEngine {
     function depositCollateral(
         address tokenCollateralAddress,
         uint256 amountCollateral
-    ) external {
+    ) external moreThanZero(amountCollateral) {
         // deposit collateral
     }
 
