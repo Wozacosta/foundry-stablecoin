@@ -24,6 +24,7 @@ pragma solidity ^0.8.19;
 // private
 // view & pure functions
 
+import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
 // The correct path for ReentrancyGuard in latest Openzeppelin contracts is
 //"import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -69,7 +70,7 @@ contract DSCEngine is ReentrancyGuard {
     mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
     mapping(address user => uint256 amountDscMinted) private s_DSCMinted;
     DecentralizedStableCoin private immutable i_dsc;
-    address[] private s_tokens;
+    address[] private s_collateralTokens;
 
     /* --------------------- 
     ------- EVENTS ---------
@@ -107,6 +108,7 @@ contract DSCEngine is ReentrancyGuard {
         // USD Price Feeds (ETH/USD, BTC/USD, MKR/USD)
         for (uint256 i = 0; i < tokenAddresses.length; i++) {
             s_priceFeeds[tokenAddresses[i]] = priceFeedAddresses[i];
+            s_collateralTokens.push(tokenAddresses[i]);
         }
         i_dsc = DecentralizedStableCoin(dscAddress);
     }
@@ -211,5 +213,20 @@ contract DSCEngine is ReentrancyGuard {
         // toop through all the collateral tokens
         // get the amount of each token they have deposited
         // map it to the price to get the USD value
+        for (uint256 i = 0; i < s_collateralTokens.length; i++) {
+            address token = s_collateralTokens[i];
+            uint256 amount = s_collateralDeposited[user][token];
+            totalCollateralValueInUsd += 
+        }
+    }
+    
+    function getUsdValue(address token, uint256 amount) public view returns (uint256) {
+        // get the price feed for the token
+        // get the price of the token
+        // return the price * amount
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
+        (, int256 price, , , ) = priceFeed.latestRoundData();
+        // ETH / USD has 8 decimals (https://docs.chain.link/data-feeds/price-feeds/addresses?network=ethereum&page=1&search=eth+%2Fusd)
+        // Same for BTC / USD
     }
 }
