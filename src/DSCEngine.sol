@@ -24,7 +24,7 @@ pragma solidity ^0.8.19;
 // private
 // view & pure functions
 
-import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
 // The correct path for ReentrancyGuard in latest Openzeppelin contracts is
 //"import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -61,10 +61,19 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenAddressesAndPriceFeedAddressesLengthMismatch();
     error DSCEngine__NotAllowedToken();
     error DSCEngine__TransferFailed();
+    error DSCEngine__BreaksHealthFactor(uint256 healthFactor);
 
     /* --------------------- 
     ------- STATE VARIABLES
     /* --------------------- */
+    uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
+    uint256 private constant PRECISION = 1e18;
+
+    uint256 private constant MIN_HEALTH_FACTOR = 1;
+
+    uint256 private constant LIQUIDATION_THRESHOLD = 50; // 1/2 = you need to have double the collateral value
+    uint256 private constant LIQUIDATION_PRECISION = 100;
+    // NEED TO BE 200% OVERCOLLATERALIZED
 
     mapping(address token => address priceFeed) private s_priceFeeds;
     mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
@@ -199,34 +208,55 @@ contract DSCEngine is ReentrancyGuard {
         // 2. Get the value of all DSC minted
         // 3. Return the ratio of collateral value to DSC value
         (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);
+        uint256 collateralAdjustedForThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
+        return (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
+        // WITHOUT THRESHOLD if collateral / dscminted:
+        //      $150 ETH / 100 DSC = 1.5    👌
+        // NOW WITH THRESHOLD:
+        //      LIQUIDATION_THRESHOLD = 50
+        //      1000 ETH * 50 = 50,000 / 100 = 500
+        // OR  150 * 50= 7500 /  100= (75/100) <1  😭
     }
 
+    // 1. Check health factor (do they have enough collateral?)
+    // 2. Revert if not
     function _revertIfHealthFactorIsBroken(address user) internal view {
-        // 1. Check health factor (do they have enough collateral?)
-        // 2. Revert if not
+        uint256 userHealthFactor = _healthFactor(user);
+        if (userHealthFactor < MIN_HEALTH_FACTOR) {
+            revert DSCEngine__BreaksHealthFactor(userHealthFactor);
+        }
     }
 
     /* --------------------- 
     ------- PUBLIC & EXTERNAL VIEW FUNCTIONS
     /* --------------------- */
-    function getAccountCollateralValue(address user) public view returns (uint256) {
+    function getAccountCollateralValue(address user) public view returns (uint256 totalCollateralValueInUsd) {
         // toop through all the collateral tokens
         // get the amount of each token they have deposited
         // map it to the price to get the USD value
         for (uint256 i = 0; i < s_collateralTokens.length; i++) {
             address token = s_collateralTokens[i];
             uint256 amount = s_collateralDeposited[user][token];
-            totalCollateralValueInUsd += 
+            totalCollateralValueInUsd += getUsdValue(token, amount);
         }
+        return totalCollateralValueInUsd;
     }
-    
+
+    /**
+     * https://www.rareskills.io/post/solidity-fixed-point
+     */
     function getUsdValue(address token, uint256 amount) public view returns (uint256) {
         // get the price feed for the token
         // get the price of the token
         // return the price * amount
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
-        (, int256 price, , , ) = priceFeed.latestRoundData();
+        (, int256 price,,,) = priceFeed.latestRoundData();
         // ETH / USD has 8 decimals (https://docs.chain.link/data-feeds/price-feeds/addresses?network=ethereum&page=1&search=eth+%2Fusd)
         // Same for BTC / USD
+        // ETH / USD is a tradin pair, this means that the price is the amount of USD you get for 1 ETH
+        uint256 priceWithPrecision = uint256(price) * ADDITIONAL_FEED_PRECISION; // 1e18
+        // amount has 1e18 precision
+        // PRECISION = 1e18
+        return (priceWithPrecision * amount) / PRECISION;
     }
 }
