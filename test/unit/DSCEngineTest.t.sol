@@ -6,7 +6,7 @@ import {DeployDSC} from "../../script/DeployDSC.s.sol";
 import {DSCEngine} from "../../src/DSCEngine.sol";
 import {DecentralizedStableCoin} from "../../src/DecentralizedStableCoin.sol";
 import {HelperConfig} from "../../script/HelperConfig.s.sol";
-// import { ERC20Mock } from "@openzeppelin/contracts/mocks/ERC20Mock.sol"; Updated mock location
+import {ERC20Mock} from "@openzeppelin/contracts/mocks/ERC20Mock.sol"; //Updated mock location
 // import { ERC20Mock } from "../mocks/ERC20Mock.sol";
 // import { MockV3Aggregator } from "../mocks/MockV3Aggregator.sol";
 // import { MockMoreDebtDSC } from "../mocks/MockMoreDebtDSC.sol";
@@ -27,6 +27,9 @@ contract DSCEngineTest is Test {
     address public weth;
     address public wbtc;
     uint256 public deployerKey;
+
+    address public USER = makeAddr("user");
+    uint256 public constant AMOUNT_COLLATERAL = 10 ether; // ie. 10e18
 
     function setUp() external {
         deployer = new DeployDSC();
@@ -58,4 +61,76 @@ contract DSCEngineTest is Test {
         uint256 usdValue = dsce.getUsdValue(weth, ethAmount);
         assertEq(usdValue, expectedUsd);
     }
+
+    ///////////////////////////////////////
+    // depositCollateral Tests //
+    ///////////////////////////////////////
+
+    // this test needs it's own setup
+
+    // function testRevertsIfTransferFromFails() public {
+    //     // Arrange - Setup
+    //     address owner = msg.sender;
+    //     vm.prank(owner);
+    //     MockFailedTransferFrom mockDsc = new MockFailedTransferFrom();
+    //     tokenAddresses = [address(mockDsc)];
+    //     feedAddresses = [ethUsdPriceFeed];
+    //     vm.prank(owner);
+    //     DSCEngine mockDsce = new DSCEngine(tokenAddresses, feedAddresses, address(mockDsc));
+    //     mockDsc.mint(user, amountCollateral);
+
+    //     vm.prank(owner);
+    //     mockDsc.transferOwnership(address(mockDsce));
+    //     // Arrange - User
+    //     vm.startPrank(user);
+    //     ERC20Mock(address(mockDsc)).approve(address(mockDsce), amountCollateral);
+    //     // Act / Assert
+    //     vm.expectRevert(DSCEngine.DSCEngine__TransferFailed.selector);
+    //     mockDsce.depositCollateral(address(mockDsc), amountCollateral);
+    //     vm.stopPrank();
+    // }
+
+    function testRevertsIfCollateralZero() public {
+        vm.startPrank(USER);
+        ERC20Mock(weth).approve(address(dsce), AMOUNT_COLLATERAL);
+        /*
+            function approve(address spender, uint256 amount) public virtual override returns (bool) {
+        address owner = _msgSender();
+        _approve(owner, spender, amount);
+        return true;
+    }
+        */
+
+        vm.expectRevert(DSCEngine.DSCEngine__NeedsMoreThanZero.selector);
+        dsce.depositCollateral(weth, 0);
+        vm.stopPrank();
+    }
+
+    // function testRevertsWithUnapprovedCollateral() public {
+    //     ERC20Mock randToken = new ERC20Mock("RAN", "RAN", user, 100e18);
+    //     vm.startPrank(user);
+    //     vm.expectRevert(abi.encodeWithSelector(DSCEngine.DSCEngine__TokenNotAllowed.selector, address(randToken)));
+    //     dsce.depositCollateral(address(randToken), amountCollateral);
+    //     vm.stopPrank();
+    // }
+
+    // modifier depositedCollateral() {
+    //     vm.startPrank(user);
+    //     ERC20Mock(weth).approve(address(dsce), amountCollateral);
+    //     dsce.depositCollateral(weth, amountCollateral);
+    //     vm.stopPrank();
+    //     _;
+    // }
+
+    // function testCanDepositCollateralWithoutMinting() public depositedCollateral {
+    //     uint256 userBalance = dsc.balanceOf(user);
+    //     assertEq(userBalance, 0);
+    // }
+
+    // function testCanDepositedCollateralAndGetAccountInfo() public depositedCollateral {
+    //     (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce.getAccountInformation(user);
+    //     uint256 expectedDepositedAmount = dsce.getTokenAmountFromUsd(weth, collateralValueInUsd);
+    //     assertEq(totalDscMinted, 0);
+    //     assertEq(expectedDepositedAmount, amountCollateral);
+    // }
 }
