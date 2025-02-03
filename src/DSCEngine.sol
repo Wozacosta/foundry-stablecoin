@@ -87,6 +87,7 @@ contract DSCEngine is ReentrancyGuard {
     /* --------------------- */
 
     event CollateralDeposited(address indexed user, address indexed token, uint256 indexed amount);
+    event CollateralRedeemed(address indexed user, address indexed token, uint256 indexed amount);
 
     /* --------------------- 
     ------- MODIFIERS ------
@@ -132,6 +133,7 @@ contract DSCEngine is ReentrancyGuard {
      * @param tokenCollateralAddress The address of the token to deposit as collateral
      * @param amountCollateral The amount of collateral to deposit
      * @param amountDscToMint The amount of decentralized stablecoin to mint
+     * @notice this function will deposit your collateral and mint DSC in one transaction
      */
     function depositCollateralAndMintDSC(
         address tokenCollateralAddress,
@@ -165,13 +167,45 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
-    function redeemCollateralForDSC() external {
-        // redeem DSC
-        // withdraw collateral
+    /**
+     *
+     * @param tokenCollateralAddress  The collateral token address to redeem
+     * @param amountCollateral  The amount of collateral to redeem
+     * @param amountDscToBurn  The amount of DSC to burn
+     * This function burns DSC and redeems underlying collateral in one transaction
+     */
+    function redeemCollateralForDSC(address tokenCollateralAddress, uint256 amountCollateral, uint256 amountDscToBurn)
+        external
+    {
+        burnDSC(amountDscToBurn);
+        redeemCollateral(tokenCollateralAddress, amountCollateral);
+        // note: redeemCollateral already checks health factor
     }
 
-    function redeemCollateral() external {
-        // withdraw collateral
+    // in order to redeem:
+    // 1. health factor must be above 1 AFTER collateral pulled out
+    // CEI, checks effects interactions
+    function redeemCollateral(address tokenCollateralAddress, uint256 amountCollateral)
+        public
+        moreThanZero(amountCollateral)
+        nonReentrant
+    {
+        // 100 - 1000 will revert with "panic: arithmetic underflow or overflow (0x11)"
+        s_collateralDeposited[msg.sender][tokenCollateralAddress] -= amountCollateral;
+        emit CollateralRedeemed(msg.sender, tokenCollateralAddress, amountCollateral);
+        // transfer, FROM assumed to be sender
+        // transferfrom, set the FROM as the first argument
+        bool success = IERC20(tokenCollateralAddress).transfer(msg.sender, amountCollateral);
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+        _revertIfHealthFactorIsBroken(msg.sender);
+        // $100 ETH collateral AND $20 DSC minted
+        // Try to redeem $100 ETH and burn $20 DSC
+        // 1. if redeem first
+        // $0 ETH, $20 DSC minted
+        // Then breaks health factor
+        // note: we need to burn DSC first, then redeem collateral
     }
 
     // Check if the collateral value > DSC amount.
@@ -193,7 +227,17 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
-    function burnDSC() external {}
+    function burnDSC(uint256 amount) public moreThanZero(amount) {
+        s_DSCMinted[msg.sender] -= amount;
+        // note: why not burn it directly?
+        bool success = i_dsc.transferFrom(msg.sender, address(this), amount);
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+        i_dsc.burn(amount);
+        // NOTE: only as a backup, it shouldn't ever break the health factor
+        _revertIfHealthFactorIsBroken(msg.sender);
+    }
 
     function liquidate() external {}
 
