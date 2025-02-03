@@ -30,6 +30,7 @@ contract DSCEngineTest is Test {
 
     address public USER = makeAddr("user");
     uint256 public constant AMOUNT_COLLATERAL = 10 ether; // ie. 10e18
+    uint256 public constant STARTING_USER_BALANCE = 10 ether;
 
     function setUp() external {
         deployer = new DeployDSC();
@@ -38,6 +39,8 @@ contract DSCEngineTest is Test {
         // if (block.chainid == 31_337) {
         //     vm.deal(user, STARTING_USER_BALANCE);
         // }
+        ERC20Mock(weth).mint(USER, STARTING_USER_BALANCE);
+        ERC20Mock(wbtc).mint(USER, STARTING_USER_BALANCE);
     }
 
     //////////////////
