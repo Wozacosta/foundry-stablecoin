@@ -348,24 +348,30 @@ contract DSCEngine is ReentrancyGuard {
         collateralValueInUsd = getAccountCollateralValue(user);
     }
 
+    function _healthFactor(address user) private view returns (uint256) {
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);
+        return _calculateHealthFactor(totalDscMinted, collateralValueInUsd);
+    }
+
     /**
      * RATIO: COLLATERAL / DSCMINTED
      * Returns how close to liquidation a user is
      * If a user's ratio goes below 1, then they can get liquidated
      */
-    function _healthFactor(address user) private view returns (uint256) {
-        // 1. Get the value of all collateral
-        // 2. Get the value of all DSC minted
-        // 3. Return the ratio of collateral value to DSC value
-        (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);
+    // WITHOUT THRESHOLD if collateral / dscminted:
+    //      $150 ETH / 100 DSC = 1.5    👌
+    // NOW WITH THRESHOLD:
+    //      LIQUIDATION_THRESHOLD = 50
+    //      1000 ETH * 50 = 50,000 / 100 = 500
+    // OR  150 * 50= 7500 /  100= (75/100) <1  😭
+    function _calculateHealthFactor(uint256 totalDscMinted, uint256 collateralValueInUsd)
+        internal
+        pure
+        returns (uint256)
+    {
+        if (totalDscMinted == 0) return type(uint256).max;
         uint256 collateralAdjustedForThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
         return (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
-        // WITHOUT THRESHOLD if collateral / dscminted:
-        //      $150 ETH / 100 DSC = 1.5    👌
-        // NOW WITH THRESHOLD:
-        //      LIQUIDATION_THRESHOLD = 50
-        //      1000 ETH * 50 = 50,000 / 100 = 500
-        // OR  150 * 50= 7500 /  100= (75/100) <1  😭
     }
 
     // 1. Check health factor (do they have enough collateral?)
@@ -375,11 +381,18 @@ contract DSCEngine is ReentrancyGuard {
         if (userHealthFactor < MIN_HEALTH_FACTOR) {
             revert DSCEngine__BreaksHealthFactor(userHealthFactor);
         }
+    } /* --------------------- 
+        ------- PUBLIC & EXTERNAL VIEW FUNCTIONS
+        /* --------------------- */
+
+    function calculateHealthFactor(uint256 totalDscMinted, uint256 collateralValueInUsd)
+        external
+        pure
+        returns (uint256)
+    {
+        return _calculateHealthFactor(totalDscMinted, collateralValueInUsd);
     }
 
-    /* --------------------- 
-    ------- PUBLIC & EXTERNAL VIEW FUNCTIONS
-    /* --------------------- */
     function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) public view returns (uint256) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
         (, int256 price,,,) = priceFeed.latestRoundData();
@@ -417,5 +430,21 @@ contract DSCEngine is ReentrancyGuard {
         // amount has 1e18 precision
         // PRECISION = 1e18
         return (priceWithPrecision * amount) / PRECISION;
+    }
+
+    function getAccountInformation(address user)
+        external
+        view
+        returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
+    {
+        (totalDscMinted, collateralValueInUsd) = _getAccountInformation(user);
+    }
+
+    function getAdditionalFeedPrecision() external pure returns (uint256) {
+        return ADDITIONAL_FEED_PRECISION;
+    }
+
+    function getPrecision() external pure returns (uint256) {
+        return PRECISION;
     }
 }
