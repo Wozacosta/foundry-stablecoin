@@ -64,6 +64,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__BreaksHealthFactor(uint256 healthFactor);
     error DSCEngine__HealthFactorOk();
     error DSCEngine__MintFailed();
+    error DSCEngine__HealthFactorNotImproved();
 
     /* --------------------- 
     ------- STATE VARIABLES
@@ -89,7 +90,9 @@ contract DSCEngine is ReentrancyGuard {
     /* --------------------- */
 
     event CollateralDeposited(address indexed user, address indexed token, uint256 indexed amount);
-    event CollateralRedeemed(address indexed user, address indexed token, uint256 indexed amount);
+    event CollateralRedeemed(
+        address indexed redeemedFrom, address indexed redeemedTo, address indexed token, uint256 amount
+    );
 
     /* --------------------- 
     ------- MODIFIERS ------
@@ -192,15 +195,7 @@ contract DSCEngine is ReentrancyGuard {
         moreThanZero(amountCollateral)
         nonReentrant
     {
-        // 100 - 1000 will revert with "panic: arithmetic underflow or overflow (0x11)"
-        s_collateralDeposited[msg.sender][tokenCollateralAddress] -= amountCollateral;
-        emit CollateralRedeemed(msg.sender, tokenCollateralAddress, amountCollateral);
-        // transfer, FROM assumed to be sender
-        // transferfrom, set the FROM as the first argument
-        bool success = IERC20(tokenCollateralAddress).transfer(msg.sender, amountCollateral);
-        if (!success) {
-            revert DSCEngine__TransferFailed();
-        }
+        _redeemCollateral(msg.sender, msg.sender, tokenCollateralAddress, amountCollateral);
         _revertIfHealthFactorIsBroken(msg.sender);
         // $100 ETH collateral AND $20 DSC minted
         // Try to redeem $100 ETH and burn $20 DSC
@@ -230,15 +225,7 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     function burnDSC(uint256 amount) public moreThanZero(amount) {
-        s_DSCMinted[msg.sender] -= amount;
-        // note: why not burn it directly?
-        // -> because i_dsc.burn(amount) is onlyOwner, but still checks
-        // if the balance is enough
-        bool success = i_dsc.transferFrom(msg.sender, address(this), amount);
-        if (!success) {
-            revert DSCEngine__TransferFailed();
-        }
-        i_dsc.burn(amount);
+        _burnDSC(amount, msg.sender, msg.sender);
         // NOTE: only as a backup, it shouldn't ever break the health factor
         _revertIfHealthFactorIsBroken(msg.sender);
     }
@@ -249,6 +236,7 @@ contract DSCEngine is ReentrancyGuard {
      * @param collateral The erc20 collateral address to liquidate from the user
      * @param user The user who has broken the health factor. Their _healthFactor should be below MIN_HEALTH_FACTOR
      * @param debtToCover The amount of DSC you want to burn to improve the users health factor
+     * @notice msg.sender The one who is liquidating the user, by paying off their debt
      * @notice You can partially liquidate a user.
      * @notice You will get a liquidation bonus for taking a user's funds.
      * @notice This function working assumes the protocol will be roughly 200% overcollateralized in order
@@ -280,6 +268,15 @@ contract DSCEngine is ReentrancyGuard {
         // TODO:     And sweep extra amounts into a treasury
         uint256 bonusCollateral = (tokenAmountFromDebtCovered * LIQUIDATION_BONUS) / LIQUIDATION_PRECISION;
         uint256 totalCollateralToRedeem = tokenAmountFromDebtCovered + bonusCollateral;
+        _redeemCollateral(user, msg.sender, collateral, totalCollateralToRedeem);
+        _burnDSC(debtToCover, user, msg.sender);
+        uint256 endingUserHealthFactor = _healthFactor(user);
+        // we didn't improve the health factor
+        if (endingUserHealthFactor <= startingUserHealthFactor) {
+            revert DSCEngine__HealthFactorNotImproved();
+        }
+        // if this process ruined their health factor, we shouldn't let them liquidate
+        _revertIfHealthFactorIsBroken(msg.sender);
     }
 
     function getHealthFactor() external view {}
@@ -287,6 +284,45 @@ contract DSCEngine is ReentrancyGuard {
     /* --------------------- 
     ------- PRIVATE & INTERNAL VIEW FUNCTIONS
     /* --------------------- */
+    /**
+     *
+     * @param amountDscToBurn how much DSC to burn
+     * @param onBehalfOf whose debt are we paying off, whose Dsc are we burning
+     * @param dscFrom whose DSC are we burning
+     * @dev low-level internal function, do not call unless function calling it is checking for health factors being broken
+     */
+    function _burnDSC(uint256 amountDscToBurn, address onBehalfOf, address dscFrom)
+        private
+        moreThanZero(amountDscToBurn)
+    {
+        // note: why don't we decrease [dscFrom] instead?
+        // fixme: might be error prone
+        s_DSCMinted[onBehalfOf] -= amountDscToBurn;
+        // note: why not burn it directly?
+        // -> because i_dsc.burn(amount) is onlyOwner, but still checks
+        // if the balance is enough
+        // NOTE: why dsc from ????
+        bool success = i_dsc.transferFrom(dscFrom, address(this), amountDscToBurn);
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+        i_dsc.burn(amountDscToBurn);
+    }
+
+    function _redeemCollateral(address from, address to, address tokenCollateralAddress, uint256 amountCollateral)
+        private
+    {
+        // 100 - 1000 will revert with "panic: arithmetic underflow or overflow (0x11)"
+        s_collateralDeposited[from][tokenCollateralAddress] -= amountCollateral;
+        emit CollateralRedeemed(from, to, tokenCollateralAddress, amountCollateral);
+        // NOTE: transfer, FROM assumed to be sender
+        // NOTE:     transferfrom, set the FROM as the first argument
+        bool success = IERC20(tokenCollateralAddress).transfer(to, amountCollateral);
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+    }
+
     function _getAccountInformation(address user)
         private
         view
