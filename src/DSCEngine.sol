@@ -81,6 +81,10 @@ contract DSCEngine is ReentrancyGuard {
 
     mapping(address token => address priceFeed) private s_priceFeeds;
     mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
+
+    // NOTE:  s_DSCMinted doesn’t track ownership of DSC
+    // it tracks how much DSC was minted by each user.
+    // NOTE:   could be thought of as a debt
     mapping(address user => uint256 amountDscMinted) private s_DSCMinted;
     DecentralizedStableCoin private immutable i_dsc;
     address[] private s_collateralTokens;
@@ -290,6 +294,15 @@ contract DSCEngine is ReentrancyGuard {
      * @param onBehalfOf whose debt are we paying off, whose Dsc are we burning
      * @param dscFrom whose DSC are we burning
      * @dev low-level internal function, do not call unless function calling it is checking for health factors being broken
+     * NOTE: Why Don’t We Subtract s_DSCMinted[dscFrom]?
+     *     Because s_DSCMinted doesn’t track ownership of DSC
+     *     it tracks how much DSC was minted by each user.
+     *
+     *     dscFrom might have DSC in her wallet, but that doesn't mean she minted it.
+     *     If we reduced s_DSCMinted[dscFrom], it would suggest dscFrom had outstanding debt, which she didn’t.
+     *     The correct logic is:
+     *     Only the minter's debt should be reduced (s_DSCMinted[onBehalfOf] -= amountDscToBurn;).
+     *     The owner of DSC (dscFrom) transfers the tokens to be burned, but their s_DSCMinted value is unchanged.
      */
     function _burnDSC(uint256 amountDscToBurn, address onBehalfOf, address dscFrom)
         private
