@@ -24,7 +24,7 @@ pragma solidity ^0.8.19;
 // private
 // view & pure functions
 
-import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+import {OracleLib, AggregatorV3Interface} from "./libraries/OracleLib.sol";
 import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
 // The correct path for ReentrancyGuard in latest Openzeppelin contracts is
 //"import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -65,6 +65,11 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__HealthFactorOk();
     error DSCEngine__MintFailed();
     error DSCEngine__HealthFactorNotImproved();
+
+    ///////////////////
+    // Types
+    ///////////////////
+    using OracleLib for AggregatorV3Interface;
 
     /* --------------------- 
     ------- STATE VARIABLES
@@ -465,7 +470,7 @@ contract DSCEngine is ReentrancyGuard {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(
             s_priceFeeds[token]
         );
-        (, int256 price, , , ) = priceFeed.latestRoundData();
+        (, int256 price, , , ) = priceFeed.staleCheckLatestRoundData();
         // 1000$(price) / ETH
         // 50$(usdAmountInWei) = usdAmountInWei / price
         uint256 priceWithPrecision = uint256(price) * ADDITIONAL_FEED_PRECISION;
@@ -506,7 +511,7 @@ contract DSCEngine is ReentrancyGuard {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(
             s_priceFeeds[token]
         );
-        (, int256 price, , , ) = priceFeed.latestRoundData();
+        (, int256 price, , , ) = priceFeed.staleCheckLatestRoundData();
         // ETH / USD has 8 decimals (https://docs.chain.link/data-feeds/price-feeds/addresses?network=ethereum&page=1&search=eth+%2Fusd)
         // Same for BTC / USD
         // ETH / USD is a tradin pair, this means that the price is the amount of USD you get for 1 ETH
